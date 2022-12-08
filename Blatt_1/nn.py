@@ -11,13 +11,13 @@ def sigmoid_prime(z):
 
 def tanh(z):
     pos_exp = np.exp(z)
-    neg_exp = np.exp(z)
+    neg_exp = np.exp(-z)
 
     return (pos_exp - neg_exp) / (pos_exp + neg_exp)
 
 
 def tanh_prime(z):
-    return tanh(z) ** 2
+    return 1 - np.square(tanh(z))
 
 
 def mse(output_activations, y):
@@ -29,14 +29,11 @@ def mse_derivative(output_activations, y):
 
 
 def logistic_loss(output_activations, y):
-    return np.nan_to_num(np.sum(- y * np.log(output_activations) - (1 - y) * np.log(1 - output_activations)))
+    return np.nan_to_num(np.mean(- y * np.log(output_activations) - (1 - y) * np.log(1 - output_activations)))
 
 
-def logistic_loss_derivative(output_activations, y):
-    def inverse_sigmoid(a):
-        return np.log(a / (1 - a))
-
-    return np.nan_to_num(np.mean((output_activations - y) * inverse_sigmoid(output_activations)))
+def logistic_loss_derivative(output_activations, inputs, y):
+    return np.nan_to_num(np.mean((output_activations - y) * inputs))
 
 
 class FCNN:
@@ -45,8 +42,7 @@ class FCNN:
         self.mbs = kwargs.get("mbs", 10)
         self.eta = kwargs.get("eta", 0.03)
         self.no_hidden = kwargs.get("no_hidden", 2)
-        self.n_hidden = 4
-        self.sizes = kwargs.get("sizes", [2, self.no_hidden, self.no_hidden, self.no_hidden, 1])
+        self.sizes = kwargs.get("sizes", [2, self.no_hidden, self.no_hidden, 1])
         self.num_layers = len(self.sizes)
 
         # Callables implementing the activation function and the respective derivative
@@ -75,7 +71,7 @@ class FCNN:
             a = self.activation_function(np.dot(w, a) + b)
         return a
 
-    def backprop(self, x, y, ):
+    def backprop(self, x, y):
         nabla_b = [np.zeros(b.shape) for b in self.biases]
         nabla_w = [np.zeros(w.shape) for w in self.weights]
 
@@ -92,7 +88,10 @@ class FCNN:
             activations.append(activation)
 
         # Backward pass
-        delta = self.cost_function_derivative(activations[-1], y) * self.activation_function_derivative(zs[-1])
+        if self.cost_function.__name__ == "logistic_loss":
+            delta = self.cost_function_derivative(activations[-1], x, y) * self.activation_function_derivative(zs[-1])
+        if self.cost_function.__name__ == "mse":
+            delta = self.cost_function_derivative(activations[-1], y) * self.activation_function_derivative(zs[-1])
         nabla_b[-1] = delta
         nabla_w[-1] = np.dot(delta, activations[-2].transpose())
         # Output Layer
@@ -123,8 +122,6 @@ class FCNN:
 
         self.weights = [w - (self.eta / xmb.shape[0]) * nw for w, nw in zip(self.weights, nabla_w)]
         self.biases = [b - (self.eta / xmb.shape[0]) * nb for b, nb in zip(self.biases, nabla_b)]
-
-        # return weights, biases
 
     def evaluate(self, x_eval, y_eval):
         # if labels are one-hot encoded, call evaluate onehot
@@ -174,7 +171,7 @@ class FCNN:
 
         return correct, self.cost_function(y_pred, y_eval)
 
-    def sgd(self, x_train, y_train, x_test, y_test, epochs):
+    def sgd(self, x_train, y_train, x_test, y_test, epochs, logging):
 
         n_test = x_test.shape[0]
         n_train = x_train.shape[0]
@@ -196,9 +193,10 @@ class FCNN:
                 self.update_mini_batch(xmb, ymb)
 
             acc_val[j], mse_val[j] = self.evaluate(x_test, y_test)
-            print(f"Epoch {j}: {acc_val[j]} / {n_test} --- {self.cost_function.__name__}: {mse_val[j]}")
+            if logging:
+                print(f"Epoch {j}: {acc_val[j]} / {n_test} --- {self.cost_function.__name__}: {mse_val[j]}")
 
         self.validation_accuracy, self.validation_loss = acc_val, mse_val
 
-    def __call__(self, x_train, y_train, x_test, y_test, epochs):
-        return self.sgd(x_train, y_train, x_test, y_test, epochs)
+    def __call__(self, x_train, y_train, x_test, y_test, epochs, logging=True):
+        return self.sgd(x_train, y_train, x_test, y_test, epochs, logging)
